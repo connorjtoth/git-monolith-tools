@@ -4,6 +4,14 @@ import time
 
 from InputParams import InputParams, FileLevelNodeItem
 
+### CONSTANTS ###
+
+INPUT_PARAMS_XML_TAG = 'inputParams' #TODO: avoid replication here and in InputParams.py
+METADATA_ROOT_XML_TAG = 'metadata'
+XML_FILE_EXT = 'xml'
+DIR_METADATA_FILE_NAME = 'metadata' + XML_FILE_EXT
+
+
 # Inputs
 inputParams = InputParams(
     fileLevelNodes = {
@@ -19,7 +27,7 @@ class XmlDisassemblyTreeTraversalState:
     def __init__(self):
         self.pathList = []
         self.counters = {}
-
+        self.elementIdentifiers = {}
 
 #--- HELPERS ---
 def getXmlTreeFromFilePath(xmlFilePath: str) -> ET.ElementTree:
@@ -35,13 +43,23 @@ def postOrderXmlTreeTraversal(root: ET.Element, preOrderFunction: callable, post
 
     while stack:
         current = stack[-1]
-        if len(current) == 0 or prev == current[-1]:
+
+        # Childless Node
+        if len(current) == 0:
             current = stack.pop()
+            preOrderFunction(current, state)
             postOrderFunction(current, state)
             prev = current
+
+        # Parent Node
         else:
-            preOrderFunction(current, state)
-            stack.extend(reversed(current))
+            if prev == current[-1]:
+                current = stack.pop()
+                postOrderFunction(current, state)
+                prev = current
+            else:
+                preOrderFunction(current, state)
+                stack.extend(reversed(current))
 
 def disassembleXmlElementToDirectoryStructure(xmlNode: ET.Element, inputParams: InputParams):
 
@@ -50,6 +68,7 @@ def disassembleXmlElementToDirectoryStructure(xmlNode: ET.Element, inputParams: 
         tagNum = state.counters.get(node.tag, 0)
         state.counters[node.tag] = tagNum + 1
         elementIdentifier = f'{node.tag}_{tagNum}'
+        state.elementIdentifiers[node] = elementIdentifier
 
         # if file level node, build a directory
         if node.tag in inputParams.fileLevelNodes.keys():
@@ -71,16 +90,25 @@ def disassembleXmlElementToDirectoryStructure(xmlNode: ET.Element, inputParams: 
         if node.tag in inputParams.fileLevelNodes.keys():
             fileName = state.pathList.pop()
         elif len(state.pathList) == 1:
-            fileName = '_metadata'
+            fileName = f'{state.elementIdentifiers[node]}'
 
         if fileName:
-            ET.ElementTree(node).write(f'{nodeDirPath}/{fileName}.xml')
+            ET.ElementTree(node).write(f'{nodeDirPath}/{fileName}.{XML_FILE_EXT}')
 
     state = XmlDisassemblyTreeTraversalState()
     state.pathList = [inputParams.outputDirectoryPath]
     state.counters = {}
+    state.elementIdentifiers = {}
 
     postOrderXmlTreeTraversal(xmlNode, preOrderFunction, postOrderFunction, state)
+
+
+def buildDisassembledDirectoryMetadataFile(inputParams: InputParams):
+    metadataFilePath = f'{inputParams.outputDirectoryPath}/{DIR_METADATA_FILE_NAME}'
+    metadataFileRootElement = ET.Element(METADATA_ROOT_XML_TAG)
+    metadataFileRootElement.append(inputParams.asXmlElement())
+
+    ET.ElementTree(metadataFileRootElement).write(metadataFilePath)
 
 
 def disassembleXmlFile(inputParams: InputParams):
@@ -97,22 +125,19 @@ def disassembleXmlFile(inputParams: InputParams):
 
 
 
-def buildDisassembledDirectoryMetadataFile(inputParams: InputParams):
-    metadataFileName = 'metadata.xml'
-    metadataFilePath = f'{inputParams.outputDirectoryPath}/{metadataFileName}'
-    metadataFileRootElement = ET.Element('metadata')
-    metadataFileRootElement.append(inputParams.asXmlElement())
-
-    ET.ElementTree(metadataFileRootElement).write(metadataFilePath)
-
-
-
-
 ''' TODO: Reassemble XML Files '''
-def assembleDisassembledDirectory(dissassembledDirectory):
+def getInputParamsFromDisassembledDirectory(disassembledDirectoryPath: str):
     # directory should have a metadata file with FileName and Inputs used to make the files in the first place
-    metadataFileName = f'{dissassembledDirectory}/metadata.xml'
-    
+    directoryMetadataFilePath = f'{disassembledDirectoryPath}/{DIR_METADATA_FILE_NAME}'
+    metadataTree = ET.parse(directoryMetadataFilePath)
+    inputParams = InputParams.fromXmlElement(metadataTree.getroot().find(INPUT_PARAMS_XML_TAG))
+    return inputParams
+
+def assembleDisassembledDirectory(disassembledDirectoryPath):
+    inputParams = getInputParamsFromDisassembledDirectory(disassembledDirectoryPath)
+    pass #TODO
+
 
 
 disassembleXmlFile(inputParams)
+assembleDisassembledDirectory(inputParams.outputDirectoryPath)

@@ -6,6 +6,7 @@ INPUT_PARAMS_XML_TAG = 'inputParams'
 
 INPUT_FILE_PATH_XML_TAG = 'inputFilePath'
 OUTPUT_DIR_PATH_XML_TAG = 'outputDirectoryPath'
+VALUE_TEXT_ATTR = 'text'
 
 FILE_LEVEL_NODE_ITEM_XML_TAG = 'fileLevelNodeItem'
 FILE_LEVEL_NODE_ITEM_TAG_ATTR = 'tag'
@@ -14,7 +15,8 @@ FILE_LEVEL_NODE_LIST_XML_TAG = 'fileLevelNodes'
 
 
 class FileLevelNodeItem:
-    def __init__(self, tag, nameXPath):
+
+    def __init__(self, tag: str, nameXPath: str):
         self.tag = tag
         self.nameXPath = nameXPath
         #self.getNodeNameFunction = nodeNameFn
@@ -28,13 +30,26 @@ class FileLevelNodeItem:
         element = ET.Element(FILE_LEVEL_NODE_ITEM_XML_TAG, attribs)
         #element.text = self.getNodeNameFunction
         return element
-
+    
+    @classmethod
+    def fromXmlElement(cls, xmlElement: ET.Element):
+        tag = xmlElement.get(FILE_LEVEL_NODE_ITEM_TAG_ATTR)
+        nameXPath = xmlElement.get(FILE_LEVEL_NODE_ITEM_NAMEXPATH_ATTR)
+        return FileLevelNodeItem(tag, nameXPath)
+    
 
 class InputParams:
-    def __init__(self, fileLevelNodes={}, inputFilePath='', outputDirectoryPath=''):
+    def __init__(self, fileLevelNodes: dict = {}, inputFilePath: str = '', outputDirectoryPath: str = ''):
         self.fileLevelNodes = fileLevelNodes
         self.inputFilePath = inputFilePath
         self.outputDirectoryPath = outputDirectoryPath
+
+    @classmethod
+    def fromXmlElement(cls, xmlElement: ET.Element):
+        fileLevelNodes = {n.tag: FileLevelNodeItem.fromXmlElement(n) for n in xmlElement.findall(FILE_LEVEL_NODE_LIST_XML_TAG)}
+        inputFilePath = xmlElement.find(INPUT_FILE_PATH_XML_TAG).get(VALUE_TEXT_ATTR)
+        outputDirectoryPath = xmlElement.find(OUTPUT_DIR_PATH_XML_TAG).get(VALUE_TEXT_ATTR)
+        return InputParams(fileLevelNodes, inputFilePath, outputDirectoryPath) 
 
     def asXmlElement(self):
         inputParamsRootElement = ET.Element(INPUT_PARAMS_XML_TAG)
@@ -43,11 +58,6 @@ class InputParams:
         fileLevelNodesElement.extend(item.asXmlElement() for item in self.fileLevelNodes.values())
         inputParamsRootElement.append(fileLevelNodesElement)
 
-        inputParamsRootElement.append(ET.Element(INPUT_FILE_PATH_XML_TAG, text=self.inputFilePath))
-        inputParamsRootElement.append(ET.Element(OUTPUT_DIR_PATH_XML_TAG, text=self.outputDirectoryPath))
+        inputParamsRootElement.append(ET.Element(INPUT_FILE_PATH_XML_TAG, {VALUE_TEXT_ATTR: self.inputFilePath}))
+        inputParamsRootElement.append(ET.Element(OUTPUT_DIR_PATH_XML_TAG, {VALUE_TEXT_ATTR: self.outputDirectoryPath}))
         return inputParamsRootElement
-
-
-    def fromXmlElement(self, xmlElement):
-        pass
-        #TODO
