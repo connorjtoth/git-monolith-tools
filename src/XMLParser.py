@@ -8,7 +8,7 @@ from InputParams import InputParams, FileLevelNodeItem
 
 ### CONSTANTS ###
 
-INPUT_PARAMS_XML_TAG = 'inputParams' #TODO: avoid replication here and in InputParams.py
+INPUT_PARAMS_XML_TAG = 'InputParams' #TODO: avoid replication here and in InputParams.py
 METADATA_ROOT_XML_TAG = 'metadata'
 XML_FILE_EXT = 'xml'
 DIR_METADATA_FILE_NAME = f'metadata.{XML_FILE_EXT}'
@@ -17,13 +17,14 @@ ASSEMBLED_FILE_NAME = 'assembled.xml'
 
 
 # Inputs
-inputParams = InputParams(
-    fileLevelNodes = {
-        'Item': FileLevelNodeItem('Item', "Properties/string[@name='Name']")
-    },
-    inputFilePath = 'input/SmallFile.xml',
-    outputDirectoryPath = f'output/out_{time.time()}'
-)
+inputParams = InputParams()
+inputParams.fileLevelNodes = [
+    FileLevelNodeItem('Item', "Properties/string[@name='Name']")
+]
+inputParams.inputFilePath = 'input/SmallFile.xml'
+inputParams.outputDirectoryPath = f'output/out_{time.time()}'
+inputParams.outputShortEmptyElements = False
+
 
 #--- CLASSES ---
 class XmlDisassemblyTreeTraversalState:
@@ -42,7 +43,7 @@ def getXmlTreeParentMap(xmlTree: ET.ElementTree) -> dict:
     return parentMap
 
 def isFileLevelNode(node: ET.Element, inputParams: InputParams):
-    return node.tag in inputParams.fileLevelNodes.keys()
+    return node.tag in inputParams.getFileLevelNodeTags()
 
 
 def xmlTreeTraversal(root: ET.Element, preOrderFunction: callable, postOrderFunction: callable, state):
@@ -77,14 +78,11 @@ def disassembleXmlElementToDirectoryStructure(xmlNode: ET.Element, inputParams: 
         elementIdentifier = f'{node.tag}_{tagNum}'
         state.elementIdentifiers[node] = elementIdentifier
 
-
-        
         # if file level node or root note, build a directory
-        
         if isFileLevelNode(node, inputParams) or node == xmlNode:
             nodeName = node.tag
             if isFileLevelNode(node, inputParams):
-                nodeName = node.findtext(inputParams.fileLevelNodes[node.tag].nameXPath)
+                nodeName = node.findtext(inputParams.getFileLevelNodeByTag(node.tag).nameXPath)
             
             state.pathList.append(f'{elementIdentifier}_{nodeName}')
             nodeDir = '/'.join(state.pathList)
