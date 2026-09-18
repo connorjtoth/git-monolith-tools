@@ -5,13 +5,13 @@ import os
 
 from InputParams import InputParams, FileLevelNodeItem
 
+
 ### CONSTANTS ###
 
 INPUT_PARAMS_XML_TAG = 'inputParams' #TODO: avoid replication here and in InputParams.py
 METADATA_ROOT_XML_TAG = 'metadata'
 XML_FILE_EXT = 'xml'
 DIR_METADATA_FILE_NAME = f'metadata.{XML_FILE_EXT}'
-METADATA_ROOT_TAG_XML_TAG = 'rootTag'
 TEXT_VAL_ATTR = 'text' #TODO: avoid replication here and in InputParams.py
 ASSEMBLED_FILE_NAME = 'assembled.xml'
 
@@ -19,7 +19,6 @@ ASSEMBLED_FILE_NAME = 'assembled.xml'
 # Inputs
 inputParams = InputParams(
     fileLevelNodes = {
-        #    FileLevelNodeItem('Item', getNodelambda node: node.findtext("Properties/string[@name='Name']"))
         'Item': FileLevelNodeItem('Item', "Properties/string[@name='Name']")
     },
     inputFilePath = 'input/SmallFile.xml',
@@ -41,6 +40,10 @@ def getXmlTreeParentMap(xmlTree: ET.ElementTree) -> dict:
     parentMap = {c: p for p in xmlTree.iter() for c in p}
     parentMap[xmlTree.getroot()] = None
     return parentMap
+
+def isFileLevelNode(node: ET.Element, inputParams: InputParams):
+    return node.tag in inputParams.fileLevelNodes.keys()
+
 
 def xmlTreeTraversal(root: ET.Element, preOrderFunction: callable, postOrderFunction: callable, state):
     prev, current, stack = root, root, [root]
@@ -74,9 +77,15 @@ def disassembleXmlElementToDirectoryStructure(xmlNode: ET.Element, inputParams: 
         elementIdentifier = f'{node.tag}_{tagNum}'
         state.elementIdentifiers[node] = elementIdentifier
 
-        # if file level node, build a directory
-        if node.tag in inputParams.fileLevelNodes.keys():
-            nodeName = node.findtext(inputParams.fileLevelNodes[node.tag].nameXPath)
+
+        
+        # if file level node or root note, build a directory
+        
+        if isFileLevelNode(node, inputParams) or node == xmlNode:
+            nodeName = node.tag
+            if isFileLevelNode(node, inputParams):
+                nodeName = node.findtext(inputParams.fileLevelNodes[node.tag].nameXPath)
+            
             state.pathList.append(f'{elementIdentifier}_{nodeName}')
             nodeDir = '/'.join(state.pathList)
             mkdir(nodeDir)
@@ -85,16 +94,13 @@ def disassembleXmlElementToDirectoryStructure(xmlNode: ET.Element, inputParams: 
         nodeDirPath = '/'.join(state.pathList)
 
         # remove children that are file level nodes (to avoid double printing)
-        for n in [n for n in node if n.tag in inputParams.fileLevelNodes.keys()]:
+        for n in [n for n in node if isFileLevelNode(n, inputParams)]:
             node.remove(n)
 
-        # create a file for elements which are not file-level nodes or their descendants
-        # avoid creating a file for elements which are descendants of file level nodes
+        # create a file for elements which are file-level nodes or the root element
         fileName = None
-        if node.tag in inputParams.fileLevelNodes.keys():
+        if isFileLevelNode(node, inputParams) or node == xmlNode:
             fileName = state.pathList.pop()
-        elif len(state.pathList) == 1 and node == xmlNode:
-            fileName = f'{state.elementIdentifiers[node]}'
 
         if fileName:
             ET.ElementTree(node).write(f'{nodeDirPath}/{fileName}.{XML_FILE_EXT}')
@@ -107,11 +113,10 @@ def disassembleXmlElementToDirectoryStructure(xmlNode: ET.Element, inputParams: 
     xmlTreeTraversal(xmlNode, preOrderFunction, postOrderFunction, state)
 
 
-def buildDisassembledDirectoryMetadataFile(inputParams: InputParams, rootXmlElement: ET.Element):
+def buildDisassembledDirectoryMetadataFile(inputParams: InputParams):
     metadataFilePath = f'{inputParams.outputDirectoryPath}/{DIR_METADATA_FILE_NAME}'
     metadataFileRootElement = ET.Element(METADATA_ROOT_XML_TAG)
     metadataFileRootElement.append(inputParams.asXmlElement())
-    metadataFileRootElement.append(ET.Element(METADATA_ROOT_TAG_XML_TAG, {TEXT_VAL_ATTR: rootXmlElement.tag}))
     ET.ElementTree(metadataFileRootElement).write(metadataFilePath)
 
 
@@ -122,15 +127,11 @@ def disassembleXmlFile(inputParams: InputParams):
     outputDirectoryPath = inputParams.outputDirectoryPath
     mkdir(outputDirectoryPath)
 
-    buildDisassembledDirectoryMetadataFile(inputParams, tree.getroot())
+    buildDisassembledDirectoryMetadataFile(inputParams)
     disassembleXmlElementToDirectoryStructure(tree.getroot(), inputParams)
     
 
 
-
-
-
-''' TODO: Reassemble XML Files '''
 def getInputParamsFromDisassembledDirectory(disassembledDirectoryPath: str):
     # directory should have a metadata file with FileName and Inputs used to make the files in the first place
     directoryMetadataFilePath = f'{disassembledDirectoryPath}/{DIR_METADATA_FILE_NAME}'
@@ -138,28 +139,20 @@ def getInputParamsFromDisassembledDirectory(disassembledDirectoryPath: str):
     inputParams = InputParams.fromXmlElement(metadataTree.getroot().find(INPUT_PARAMS_XML_TAG))
     return inputParams
 
-def getRootTagFromDisassembledDirectory(disassembledDirectoryPath: str):
-    # directory should have a metadata file with FileName and Inputs used to make the files in the first place
-    directoryMetadataFilePath = f'{disassembledDirectoryPath}/{DIR_METADATA_FILE_NAME}'
-    metadataTree = ET.parse(directoryMetadataFilePath)
-    rootTag = metadataTree.find(METADATA_ROOT_TAG_XML_TAG).get(TEXT_VAL_ATTR)
-    return rootTag
-
-
 def cleanPath(path: str):
     return os.path.normcase(os.path.normpath(path))
 
-def disassembledDirectoryTraversal(disassembledDirectoryPath: str, inputParams: InputParams, rootTag: str, preOrderFunction: callable, postOrderFunction: callable, state):
 
-    prev, current, stack = cleanPath(disassembledDirectoryPath), cleanPath(disassembledDirectoryPath), [cleanPath(disassembledDirectoryPath)]
+def dfsDirectoryTraversal(dirPath: str, preOrderFunction: callable, postOrderFunction: callable, state):
+    
+    cleanDirPath = cleanPath(dirPath)
+    prev, current, stack = cleanDirPath, cleanDirPath, [cleanDirPath]
     
     while stack:
         current = stack[-1]
-
-        # Determine what we're doing
-        dirEntries = [x for x in os.scandir(current)]
-        subdirectoryEntries = [cleanPath(x) for x in dirEntries if x.is_dir()]
-        fileEntries = [cleanPath(x) for x in dirEntries if not x.is_dir()]
+        subdirectoryEntries = [cleanPath(dirEntry) 
+                               for dirEntry in os.scandir(current)
+                               if dirEntry.is_dir()]
 
         # Childless Node
         if len(subdirectoryEntries) == 0:
@@ -170,7 +163,7 @@ def disassembledDirectoryTraversal(disassembledDirectoryPath: str, inputParams: 
 
         # Parent Node
         else:
-            if any(x == prev for x in subdirectoryEntries):
+            if prev in subdirectoryEntries:
                 current = stack.pop()
                 postOrderFunction(current, state)
                 prev = current
@@ -179,25 +172,46 @@ def disassembledDirectoryTraversal(disassembledDirectoryPath: str, inputParams: 
                 stack.extend(subdirectoryEntries)
 
 
+class XmlAssemblyTreeTraversalState:
+    def __init__(self):
+        self.tree = None
+        self.parentList = []
+
 def assembleDisassembledDirectory(disassembledDirectoryPath: str):
     inputParams = getInputParamsFromDisassembledDirectory(disassembledDirectoryPath)
-    rootTag = getRootTagFromDisassembledDirectory(disassembledDirectoryPath)
+    subdirectoryEntries = [cleanPath(x) 
+                           for x in os.scandir(disassembledDirectoryPath) 
+                           if x.is_dir()]
+    assert(len(subdirectoryEntries) == 1)
+    rootElementDir = subdirectoryEntries[0]
 
-    pass #TODO
+    def preOrderFunction(currentDir: str, state):
+        # Build XML Element from the Directory's file
+        dirName = os.path.basename(currentDir)
+        tag, num, name = dirName.split('_', 2)
+        elementTree = ET.parse(f'{currentDir}/{dirName}.{XML_FILE_EXT}')
+        element = elementTree.getroot()
 
-    assembledFilePath = f'{inputParams.outputDirectoryPath}/{ASSEMBLED_FILE_NAME}'
-    assembledTree = ET.parse(f'{inputParams.outputDirectoryPath}/{rootTag}_0.{XML_FILE_EXT}')
-    assembledTree.write(assembledFilePath)
+        # Put XML Element as a child of the parent
+        if state.tree == None:
+            state.tree = elementTree
+        else:
+            state.parentList[-1].insert(int(num), element)
+        state.parentList.append(element)
 
-    def preOrderFunction(current: str, state):
-        print('preOrder:', current)
+    def postOrderFunction(currentDir: str, state):
+        state.parentList.pop()
+        if len(state.parentList) == 0:
+            assembledFilePath = f'{inputParams.outputDirectoryPath}/{ASSEMBLED_FILE_NAME}'
+            state.tree.write(assembledFilePath)
 
-    def postOrderFunction(current: str, state):
-        print('postOrder:', current)
-
-    disassembledDirectoryTraversal(disassembledDirectoryPath, inputParams, rootTag, preOrderFunction, postOrderFunction, None)
-
+    dfsDirectoryTraversal(rootElementDir, preOrderFunction, postOrderFunction, XmlAssemblyTreeTraversalState())
 
 
 disassembleXmlFile(inputParams)
 assembleDisassembledDirectory(inputParams.outputDirectoryPath)
+# TODO: maintain consistency of <X /> vs <X></X> on empty tags
+# TODO: allow tag-alphabetical re-assembly (while maintaining file-level tag order)
+# TODO: Allow exact file output matching -- e.g., don't add xmlns:xmime if it wasn't there
+# TODO: Allow option to maintain consistent output style across the files
+# TODO: Enable forcing CDATA non-escaped where it was found in original file
