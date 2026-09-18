@@ -24,6 +24,7 @@ inputParams.fileLevelNodes = [
 inputParams.inputFilePath = 'input/SmallFile.xml'
 inputParams.outputDirectoryPath = f'output/out_{time.time()}'
 inputParams.outputShortEmptyElements = False
+inputParams.indentDelimiter = '\t'
 
 
 #--- CLASSES ---
@@ -44,6 +45,11 @@ def getXmlTreeParentMap(xmlTree: ET.ElementTree) -> dict:
 
 def isFileLevelNode(node: ET.Element, inputParams: InputParams):
     return node.tag in inputParams.getFileLevelNodeTags()
+
+def writeXmlFile(elementTree: ET.ElementTree, filePath: str, inputParams: InputParams):
+    ET.indent(elementTree, inputParams.indentDelimiter)
+    elementTree.write(filePath,
+                      short_empty_elements=inputParams.outputShortEmptyElements)
 
 
 def xmlTreeTraversal(root: ET.Element, preOrderFunction: callable, postOrderFunction: callable, state):
@@ -101,7 +107,8 @@ def disassembleXmlElementToDirectoryStructure(xmlNode: ET.Element, inputParams: 
             fileName = state.pathList.pop()
 
         if fileName:
-            ET.ElementTree(node).write(f'{nodeDirPath}/{fileName}.{XML_FILE_EXT}')
+            filePath = f'{nodeDirPath}/{fileName}.{XML_FILE_EXT}'
+            writeXmlFile(ET.ElementTree(node), filePath, inputParams)
 
     state = XmlDisassemblyTreeTraversalState()
     state.pathList = [inputParams.outputDirectoryPath]
@@ -115,7 +122,7 @@ def buildDisassembledDirectoryMetadataFile(inputParams: InputParams):
     metadataFilePath = f'{inputParams.outputDirectoryPath}/{DIR_METADATA_FILE_NAME}'
     metadataFileRootElement = ET.Element(METADATA_ROOT_XML_TAG)
     metadataFileRootElement.append(inputParams.asXmlElement())
-    ET.ElementTree(metadataFileRootElement).write(metadataFilePath)
+    writeXmlFile(ET.ElementTree(metadataFileRootElement), metadataFilePath, inputParams)
 
 
 def disassembleXmlFile(inputParams: InputParams):
@@ -201,15 +208,13 @@ def assembleDisassembledDirectory(disassembledDirectoryPath: str):
         state.parentList.pop()
         if len(state.parentList) == 0:
             assembledFilePath = f'{inputParams.outputDirectoryPath}/{ASSEMBLED_FILE_NAME}'
-            state.tree.write(assembledFilePath)
+            writeXmlFile(state.tree, assembledFilePath, inputParams)
 
     dfsDirectoryTraversal(rootElementDir, preOrderFunction, postOrderFunction, XmlAssemblyTreeTraversalState())
 
 
 disassembleXmlFile(inputParams)
 assembleDisassembledDirectory(inputParams.outputDirectoryPath)
-# TODO: maintain consistency of <X /> vs <X></X> on empty tags
 # TODO: allow tag-alphabetical re-assembly (while maintaining file-level tag order)
 # TODO: Allow exact file output matching -- e.g., don't add xmlns:xmime if it wasn't there
-# TODO: Allow option to maintain consistent output style across the files
 # TODO: Enable forcing CDATA non-escaped where it was found in original file

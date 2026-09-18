@@ -17,6 +17,7 @@ class InputParams(XmlSerializable):
         self.inputFilePath: str = ''
         self.outputDirectoryPath: str = ''
         self.outputShortEmptyElements: bool = True
+        self.indentDelimiter = '  '
 
     def getFileLevelNodeTags(self):
         return [item.tag for item in self.fileLevelNodes]

@@ -15,7 +15,7 @@ class XmlSerializable:
             elif isinstance(value, XmlSerializable):
                 element.append(value.asXmlElement())
             elif isinstance(value, bool):
-                element.set(key, '1' if value else '0')
+                element.set(key, str(value))
             else:
                 element.set(key, value)
         return element
@@ -25,7 +25,10 @@ class XmlSerializable:
         returnObj = cls()
         for k in vars(returnObj).keys():
             if xmlElement.get(k):
-                returnObj.__setattr__(k, xmlElement.get(k))
+                value = xmlElement.get(k)
+                if value in ('True', 'False'):
+                    value = (value == 'True')
+                returnObj.__setattr__(k, value)
             elif xmlElement.find(k):
                 listElement = xmlElement.find(k)
                 list = []
